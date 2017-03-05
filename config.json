@@ -1,16 +1,16 @@
 [
     {
-        "next_episode": "S01E02", 
+        "next_episode": "S01E04", 
         "final_episode": "S01E10", 
-        "isActive": true, 
         "next_episode_airs": "Dec/05/2014", 
+        "isActive": true, 
         "title": "westworld"
     }, 
     {
-        "next_episode": "S07E10", 
+        "next_episode": "S07E12", 
         "final_episode": "S01E16", 
-        "isActive": true, 
         "next_episode_airs": "Dec/05/2014", 
+        "isActive": true, 
         "title": "walking dead"
     }
 ]

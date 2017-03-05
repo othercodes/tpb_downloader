@@ -58,17 +58,20 @@ class MyHTMLParser(HTMLParser):
 def check_if_client_running():
 	try:
 		subprocess.check_output(["transmission-remote", "-l"], stderr=subprocess.STDOUT)
-	except subprocess.CalledProcessError, err:
-		print err.output
-		print "The server is stopped, starting..."
-		subprocess.call(["transmission-daemon"])
-		print "The server is started."
+	except subprocess.CalledProcessError as err:
+		if "Couldn't connect to server" in err.output:
+			print "The server is stopped, starting..."
+			subprocess.call(["transmission-daemon"])
+			print "The server is started."
+		else:
+			print "Unrecognized error: %s" % err.output
+
 
 def main():
 
 	global data
 
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser() 
 	parser.add_argument('-hd', nargs='?', default=True, const=True, type=bool, dest='isHd', help='defines whether HD quality episodes should be downloaded')
 	parser.add_argument('-c', '--config', default='config.json', dest='config', help='config with series to be checked')
 	
@@ -78,6 +81,8 @@ def main():
 		video_quality_path = HDPATH
 	else:
 		video_quality_path = PATH
+
+	check_if_client_running()
 	
 	#reading config and closing it
 	jsonfile = open(options.config)
