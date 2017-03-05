@@ -19,13 +19,18 @@ PATH = '0/7/200'
 
 class MyHTMLParser(HTMLParser):
 
+	'''
+	redefining init to pass episode id
+	'''
 	def __init__(self, title, next_episode, already_downloaded = False):
-		# need to pass the episode id when initializing the object so creating a custom class
 		HTMLParser.__init__(self)
 		self.title = title
 		self.next_episode = next_episode
 		self.already_downloaded = already_downloaded
 
+	'''
+	redefining handle_starttag to parse out magnet link for the required episode and add it for download
+	'''
 	def handle_starttag(self, tag, attrs):
 		if tag == 'a':
 			# it's a list of tuples, we need to get the second value of the first tuple
@@ -71,13 +76,14 @@ def main():
 
 	global data
 
-	parser = argparse.ArgumentParser() 
-	parser.add_argument('-hd', nargs='?', default=True, const=True, type=bool, dest='isHd', help='defines whether HD quality episodes should be downloaded')
+	parser = argparse.ArgumentParser()
+	#nargs + const=False make is possible to just specifiy '-nohd' without params to pass False value, if -nohd is not passed the default value is taken
+	parser.add_argument('-nohd', nargs='?', default=True, const=False, type=bool, dest='isHD', help='defines whether low quality episodes should be downloaded')
 	parser.add_argument('-c', '--config', default='config.json', dest='config', help='config with series to be checked')
 	
 	options = parser.parse_args()
 
-	if options.isHd:
+	if options.isHD:
 		video_quality_path = HDPATH
 	else:
 		video_quality_path = PATH
@@ -87,6 +93,7 @@ def main():
 	#reading config and closing it
 	jsonfile = open(options.config)
 	data = json.load(jsonfile)
+	print type(data)
 	jsonfile.close()
 
 	for series in data:
@@ -127,11 +134,17 @@ def main():
 			parser = MyHTMLParser(series['title'], series['next_episode'])
 			parser.feed(content_parseme)
 			print 'Previous episodes can be downloaded here: %s' % url
+	
+	# let's see if we can still serialize it...
+	try:
+		serialized = json.dumps(data, indent=4)
+	except TypeError as err: 
+		print "ERROR: Config object is corrupted, exiting without writing to %s" % options.config
+		raise
 
-	#writing resulting config:
-	jsonfile = open(options.config, "w+")
-	jsonfile.write(json.dumps(data, indent=4))
+	jsonfile = open(options.config, "w")
+	jsonfile.write(serialized)
 	jsonfile.close()
-
+	
 if __name__ == "__main__":
 	main()
