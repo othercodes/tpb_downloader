@@ -1,10 +1,10 @@
 #!/usr/bin/python
 
 import sys
+import re
 import json
 import urllib2
 import urllib
-import logging
 import subprocess
 import argparse
 import gzip
@@ -17,50 +17,42 @@ PIRATEBAY_URL = "thepiratebay.org"
 HDPATH = '0/7/208'
 PATH = '0/7/200'
 
-class MyHTMLParser(HTMLParser):
+#TODO: move out class to a separate file
+class MyHTMLParser(HTMLParser, object):
 
-	'''
-	redefining init to pass episode id
-	'''
-	def __init__(self, title, next_episode, already_downloaded = False):
-		HTMLParser.__init__(self)
+	def __init__(self, title, next_episode, preferred_magnet_link = None):
+		"""
+		redefining init to pass episode id and store preferred_magnet_link (ettv has highest priority)
+		"""
+		super(MyHTMLParser, self).__init__()
 		self.title = title
 		self.next_episode = next_episode
-		self.already_downloaded = already_downloaded
+		self.preferred_magnet_link = preferred_magnet_link
 
-	'''
-	redefining handle_starttag to parse out magnet link for the required episode and add it for download
-	'''
 	def handle_starttag(self, tag, attrs):
+		"""
+		redefining handle_starttag to parse out magnet link for the required episode and add it for download
+		"""
 		if tag == 'a':
-			# it's a list of tuples, we need to get the second value of the first tuple
-			listeg = attrs[0]
+			link = attrs[0][1]
+			# finding all magnet links for this episode
+			if re.search(("^magnet(.+?)%s" % self.next_episode), link):
+				# updating preferred link if we find ettv or it's the first link that we find
+				if "ettv" in link or self.preferred_magnet_link is None:
+					self.preferred_magnet_link = link
 
-			# getting magnet link for needed episode if it's already out:
-			# do it via mask? need to add 'HD' and 'eztv'
-			if "magnet" in listeg[1] and self.next_episode in listeg[1] and self.already_downloaded == False:
-				print "Woooohoo, found NEW EPISODE %s!" % self.next_episode
-				try:
-					output = subprocess.check_output(["transmission-remote", "-a", listeg[1]], stderr=subprocess.STDOUT)
-					print "New episode is scheduled for downloading"
-				except subprocess.CalledProcessError, err:
-					print "Could not schedule torrent: %s, the command was %s" % (err.output, err.cmd), 'error'
-				# we've downloaded the torrent, no need to check the rest, maybe we need to call destruct to save the time?
-				else:
-					for series in data:
-						if series['title'] == self.title:
-							if series['next_episode'] == series['final_episode']:
-								series['active'] = 'no'
-								print "Alas, this was the last episode in this series :("
-							current_split = self.next_episode.split('E')
-							#incrementing episode number
-							next = current_split[0] + 'E' + str(int(current_split[1]) + 1).zfill(2)
-							print "Next episode will be", next
-							series['next_episode'] = next
-				#should be set only if there was no exception -> in 'else'
-				self.already_downloaded = True
+	def close(self):
+		"""
+		downloading preferred_magnet_link
+		"""
+		if self.preferred_magnet_link is not None:
+			print "Woooohoo, found NEW EPISODE %s!" % self.next_episode
+			add_torrent(self.preferred_magnet_link)
+			increment_episode_id(self.title, self.next_episode)
+			# from HTMLParser.close() doc: redefined version should always call the HTMLParser base class method close()
+			super(MyHTMLParser, self).close()
 
-def check_if_client_running():
+def check_if_transmission_is_running():
 	try:
 		subprocess.check_output(["transmission-remote", "-l"], stderr=subprocess.STDOUT)
 	except subprocess.CalledProcessError as err:
@@ -71,9 +63,30 @@ def check_if_client_running():
 		else:
 			print "Unrecognized error: %s" % err.output
 
+def add_torrent(magnet_link):
+	try:
+		subprocess.check_output(["transmission-remote", "-a", magnet_link], stderr=subprocess.STDOUT)
+		print "New episode was scheduled for downloading"
+	except subprocess.CalledProcessError, err:
+		print "Could not schedule torrent: %s, the command was %s" % (err.output, err.cmd), 'error'
+		raise
+
+def increment_episode_id(title, next_episode):
+	# TODO: change config structure to search by key instead of iterating over all of the objects
+	for series in data:
+		if series['title'] == title:
+			if series['next_episode'] == series['final_episode']:
+				series['active'] = 'no'
+				print "Alas, this was the last episode in this series :("
+			current_split = next_episode.split('E')
+			# incrementing episode number
+			next = current_split[0] + 'E' + str(int(current_split[1]) + 1).zfill(2)
+			print "Next episode will be", next
+			series['next_episode'] = next
 
 def main():
 
+	# TODO: get rid of globals
 	global data
 
 	parser = argparse.ArgumentParser()
@@ -88,12 +101,10 @@ def main():
 	else:
 		video_quality_path = PATH
 
-	check_if_client_running()
+	check_if_transmission_is_running()
 	
-	#reading config and closing it
-	jsonfile = open(options.config)
+	jsonfile = open(options.config, "r")
 	data = json.load(jsonfile)
-	print type(data)
 	jsonfile.close()
 
 	for series in data:
@@ -110,14 +121,15 @@ def main():
 			search_request = urllib2.Request(url, headers={'User-Agent' : "Magic Browser"})
 
 			try:
+				# TODO: add 2-3 retries since TPB often returns 502: Bad Gateway which is reaaaaally annoying
 				response = urllib2.urlopen(search_request)
-			except KeyboardInterrupt:
-				print "\nOkok, you're the boss, exiting..."
-				sys.exit(0)
 			except urllib2.URLError as err:
 				print "\nERROR:\n%s\nLooks like TPD is down again :(" %str(err.reason), 'error'
 				print "The query was: %s\n" % url, 'error'
-				sys.exit(1)
+				raise
+			except KeyboardInterrupt:
+				print "\nOkok, you're the boss, exiting..."
+				sys.exit(0)
 			except:
 				print "Unexpected error:"
 				raise
@@ -125,14 +137,16 @@ def main():
 			# handling cases when pages are gzipped
 			if response.info().get('Content-Encoding') == 'gzip':
 				print "gzipped!"
-				buf = StringIO( response.read())
+				buf = StringIO(response.read())
 				f = gzip.GzipFile(fileobj=buf)
 				content_parseme = f.read()
 			else:
 				content_parseme = response.read()
 
-			parser = MyHTMLParser(series['title'], series['next_episode'])
-			parser.feed(content_parseme)
+			page_parser = MyHTMLParser(series['title'], series['next_episode'])
+			page_parser.feed(content_parseme)
+			page_parser.close()
+
 			print 'Previous episodes can be downloaded here: %s' % url
 	
 	# let's see if we can still serialize it...
@@ -142,6 +156,7 @@ def main():
 		print "ERROR: Config object is corrupted, exiting without writing to %s" % options.config
 		raise
 
+	# writing updated config to the FS
 	jsonfile = open(options.config, "w")
 	jsonfile.write(serialized)
 	jsonfile.close()

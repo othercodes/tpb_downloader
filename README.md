@@ -4,7 +4,7 @@ A script to parse and download new episodes for TV series from thepiratebay
 # How to use:
 1. Install transmission packages including transmission-remote and transmission-daemon
 2. Extend config.json with the list of your series (provide title and next_episode)
-3. Run ./tpb_downloader.py (Python2)
+3. Run ./tpb_downloader.py or ./tpb_downloader.py --nohd (Python2)
 
 # Current limitations:
 - supports only Transmission for Linux
@@ -29,4 +29,5 @@ A script to parse and download new episodes for TV series from thepiratebay
         "isActive": true, 
         "title": "walking dead"
     }
-]```
+]
+```
